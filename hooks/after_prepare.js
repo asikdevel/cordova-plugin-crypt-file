@@ -1,19 +1,35 @@
-
 function findCryptoFiles(context, dir) {
-    var path              = context.requireCordovaModule('path'),
-        fs                = context.requireCordovaModule('fs');
+    var path = context.requireCordovaModule('path'),
+        fs = context.requireCordovaModule('fs');
 
     var fileList = [];
     var list = fs.readdirSync(dir);
-    list.filter(function(file) {
-        return fs.statSync(path.join(dir, file)).isFile() && /.*\.(htm|html|js|css)$/.test(file);
-    }).forEach(function(file) {
+
+    list.filter(function (file) {
+        if (encFilePathPatterns.length === 0) {
+            return fs.statSync(path.join(dir, file)).isFile() && /.*\.(htm|html|js|css)$/.test(file);
+        } else {
+            function testFileName(filePath) {
+                var result = false;
+
+                encFilePathPatterns.forEach(function (pattern) {
+                    var matcher = new RegExp(pattern);
+                    result = (!result && matcher.test(filePath)) || result;
+                });
+
+                return result;
+            }
+
+            return fs.statSync(path.join(dir, file)).isFile() && testFileName(path.join(dir, file));
+        }
+    }).forEach(function (file) {
         fileList.push(path.join(dir, file));
     });
+
     // sub dir
-    list.filter(function(file) {
+    list.filter(function (file) {
         return fs.statSync(path.join(dir, file)).isDirectory();
-    }).forEach(function(file) {
+    }).forEach(function (file) {
         var subDir = path.join(dir, file)
         var subFileList = findCryptoFiles(context, subDir);
         fileList = fileList.concat(subFileList);
@@ -39,7 +55,7 @@ function replaceCryptKey_ios(pluginDir, key, iv) {
     var content = fs.readFileSync(sourceFile, 'utf-8');
 
     content = content.replace(/kCryptKey = @".*";/, 'kCryptKey = @"' + key + '";')
-                     .replace(/kCryptIv = @".*";/, 'kCryptIv = @"' + iv + '";');
+        .replace(/kCryptIv = @".*";/, 'kCryptIv = @"' + iv + '";');
 
     fs.writeFileSync(sourceFile, content, 'utf-8');
 }
@@ -52,22 +68,23 @@ function replaceCryptKey_android(pluginDir, key, iv) {
     var content = fs.readFileSync(sourceFile, 'utf-8');
 
     content = content.replace(/CRYPT_KEY = ".*";/, 'CRYPT_KEY = "' + key + '";')
-                     .replace(/CRYPT_IV = ".*";/, 'CRYPT_IV = "' + iv + '";');
+        .replace(/CRYPT_IV = ".*";/, 'CRYPT_IV = "' + iv + '";');
 
     fs.writeFileSync(sourceFile, content, 'utf-8');
 }
 
-module.exports = function(context) {
+var encFilePathPatterns;
 
-    var path              = context.requireCordovaModule('path'),
-        fs                = context.requireCordovaModule('fs'),
-        crypto            = context.requireCordovaModule('crypto'),
-        Q                 = context.requireCordovaModule('q'),
-        cordova_util      = context.requireCordovaModule('cordova-lib/src/cordova/util'),
-        platforms         = context.requireCordovaModule('cordova-lib/src/platforms/platforms'),
-        Parser            = context.requireCordovaModule('cordova-lib/src/cordova/metadata/parser'),
-        ParserHelper      = context.requireCordovaModule('cordova-lib/src/cordova/metadata/parserhelper/ParserHelper'),
-        ConfigParser      = context.requireCordovaModule('cordova-common').ConfigParser;
+module.exports = function (context) {
+    var path = context.requireCordovaModule('path'),
+        fs = context.requireCordovaModule('fs'),
+        crypto = context.requireCordovaModule('crypto'),
+        Q = context.requireCordovaModule('q'),
+        cordova_util = context.requireCordovaModule('cordova-lib/src/cordova/util'),
+        platforms = context.requireCordovaModule('cordova-lib/src/platforms/platforms'),
+        Parser = context.requireCordovaModule('cordova-lib/src/cordova/metadata/parser'),
+        ParserHelper = context.requireCordovaModule('cordova-lib/src/cordova/metadata/parserhelper/ParserHelper'),
+        ConfigParser = context.requireCordovaModule('cordova-common').ConfigParser;
 
     var deferral = new Q.defer();
     var projectRoot = cordova_util.cdProjectRoot();
@@ -77,13 +94,16 @@ module.exports = function(context) {
 
     console.log("key=" + key + ", iv=" + iv)
 
-    context.opts.platforms.map(function(platform) {
+    context.opts.platforms.map(function (platform) {
+        var packageJSON = fs.readFileSync('package.json', 'utf-8');
         var platformPath = path.join(projectRoot, 'platforms', platform);
         var platformApi = platforms.getPlatformApi(platform, platformPath);
         var platformInfo = platformApi.getPlatformInfo();
         var wwwDir = platformInfo.locations.www;
 
-        findCryptoFiles(context, wwwDir).forEach(function(file) {
+        encFilePathPatterns = JSON.parse(packageJSON).encFilePathPatterns || [];
+
+        findCryptoFiles(context, wwwDir).forEach(function (file) {
             var content = fs.readFileSync(file, 'utf-8');
             fs.writeFileSync(file, encryptData(content, key, iv), 'utf-8');
             console.log("encrypt: " + file);
@@ -100,9 +120,9 @@ module.exports = function(context) {
             replaceCryptKey_android(pluginDir, key, iv);
 
             var cfg = new ConfigParser(platformInfo.projectConfig.path);
-            cfg.doc.getroot().getchildren().filter(function(child, idx, arr) {
+            cfg.doc.getroot().getchildren().filter(function (child, idx, arr) {
                 return (child.tag == 'content');
-            }).map(function(child) {
+            }).map(function (child) {
                 child.attrib.src = '/+++/' + child.attrib.src;
             });
 

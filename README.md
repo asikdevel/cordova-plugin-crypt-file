@@ -19,6 +19,9 @@ or
 * .js
 * .css
 
+## Custom filepath pattern
+Add array of filepath patterns that would be encrypted within **package.json** with key name `encFilePathPatterns`, otherwise will encrypt all script files.
+
 ## Supported platforms
 * iOS
 * Android
